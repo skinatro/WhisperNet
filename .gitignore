@@ -1,0 +1,87 @@
+# ESP-IDF build output
+/build/
+/build.*
+/bootloader/
+/bootloader-prefix/
+/CMakeFiles/
+/CMakeLists.txt.user
+
+# SDK config
+sdkconfig
+sdkconfig.*
+
+# Project build artifacts
+/project_description.json
+/project_description_*.json
+/*.elf
+/*.bin
+/*.map
+/*.hex
+
+# Ninja/meson
+/build.ninja
+/rules.ninja
+
+# IDF build env files
+config.env
+config/**
+
+# Partition table
+partition-table/
+
+# Certificates and keys
+**/*.pem
+**/*.crt
+**/*.key
+
+# Python virtualenvs
+.env/
+.venv/
+venv/
+ENV/
+env/
+
+# pip cache
+pip-wheel-metadata/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Editor directories and files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# MacOS
+.DS_Store
+
+# Linux
+*~
+
+# Ccache
+.ccache/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Misc
+*.log
+*.tmp
+
+# Git submodule build outputs (if any)
+**/build/
+
+# Serial monitor/IDF monitor temporary files
+*.monitor
+
+# Ignore compiled python bytecode
+__pycache__/
+
+# Ignore user local settings
+local_settings.json
+
+# Keep this file tracked
+!.gitignore
