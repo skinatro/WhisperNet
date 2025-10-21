@@ -11,6 +11,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "lcd/lcd_i2c.h"
+
 #include "ble_mesh_example_init.h"
 #include "board.h"
 #include "esp_ble_mesh_common_api.h"
@@ -313,7 +315,7 @@ void app_main(void) {
   ESP_ERROR_CHECK(err);
 
   board_init();
-
+  
   err = bluetooth_init();
   if (err) {
     ESP_LOGE(TAG, "esp32_bluetooth_init failed (err %d)", err);
@@ -321,6 +323,10 @@ void app_main(void) {
   }
 
   ble_mesh_get_dev_uuid(dev_uuid);
+
+lcd_i2c_init(I2C_NUM_0, (gpio_num_t)21, (gpio_num_t)22, 400000, 0x27);
+lcd_clear();
+lcd_printf("Mesh booting…");
 
   /* Initialize the Bluetooth Mesh Subsystem */
   err = ble_mesh_init();
