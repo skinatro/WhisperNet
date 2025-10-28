@@ -25,6 +25,8 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 
+#include "bridge_gatts.h"
+
 #define TAG "EXAMPLE"
 
 #define CID_ESP 0x02E5
@@ -42,6 +44,9 @@ static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = {0x32, 0x10};
 static uint16_t g_net_idx = 0x0000;
 static uint16_t g_app_idx = 0x0000;
 static uint16_t g_elem_addr = 0x0000;
+
+void bridge_gatts_init(void);
+void bridge_notify(const uint8_t *data, uint16_t len);
 
 static esp_ble_mesh_cfg_srv_t config_server = {
     .net_transmit = ESP_BLE_MESH_TRANSMIT(2, 30),
@@ -236,6 +241,8 @@ static void example_ble_mesh_custom_model_cb(
             ESP_BLE_MESH_VND_MODEL_OP_STATUS, sizeof(echo_tid),
             (uint8_t*)&echo_tid);
         if (err) ESP_LOGE(TAG, "STATUS send failed (%d)", err);
+        uint16_t mirror_len = len > 20 ? 20 : len;
+        bridge_notify(p, mirror_len);
         return;
       }
 
@@ -256,6 +263,8 @@ static void example_ble_mesh_custom_model_cb(
                  " Length:            %u bytes\n"
                  " Value:             0x%04x",
                  c->addr, c->recv_dst, c->recv_ttl, c->recv_rssi, len, val);
+        uint16_t mirror_len = len > 20 ? 20 : len;
+        bridge_notify(p, mirror_len);
         return;
       }
 
@@ -321,6 +330,8 @@ void app_main(void) {
     ESP_LOGE(TAG, "esp32_bluetooth_init failed (err %d)", err);
     return;
   }
+
+  bridge_gatts_init();
 
   ble_mesh_get_dev_uuid(dev_uuid);
 
