@@ -30,6 +30,7 @@
 #define TAG "EXAMPLE"
 
 #define CID_ESP 0x02E5
+#define GROUP_ADDR 0xC000
 
 #define ESP_BLE_MESH_VND_MODEL_ID_CLIENT 0x0000
 #define ESP_BLE_MESH_VND_MODEL_ID_SERVER 0x0001
@@ -42,11 +43,45 @@
 static uint8_t dev_uuid[ESP_BLE_MESH_OCTET16_LEN] = {0x32, 0x10};
 
 static uint16_t g_net_idx = 0x0000;
-static uint16_t g_app_idx = 0x0000;
+static uint16_t g_app_idx = ESP_BLE_MESH_KEY_UNUSED;
 static uint16_t g_elem_addr = 0x0000;
+
+static esp_ble_mesh_model_t *g_vnd_cli_model = NULL;
+static esp_ble_mesh_model_t *g_vnd_srv_model = NULL;
+
 
 void bridge_gatts_init(void);
 void bridge_notify(const uint8_t *data, uint16_t len);
+
+
+static void bridge_rx_to_mesh(const uint8_t *data, uint16_t len) {
+    if (!g_vnd_srv_model) {
+        ESP_LOGW(TAG, "Server model not found yet");
+        return;
+    }
+    if (g_app_idx == ESP_BLE_MESH_KEY_UNUSED) {
+        ESP_LOGW(TAG, "No AppKey index yet; receive a mesh msg once or bind AppKey to this model.");
+        return;
+    }
+    if (!len) return;
+    if (len > 60) len = 60;
+
+    esp_ble_mesh_msg_ctx_t ctx = {0};
+    ctx.net_idx  = g_net_idx;   // set in prov_complete or from last RX
+    ctx.app_idx  = g_app_idx;   // from last RX/bind
+    ctx.addr     = GROUP_ADDR;  // 0xC000
+    ctx.send_ttl = 4;
+
+    esp_err_t err = esp_ble_mesh_server_model_send_msg(
+        g_vnd_srv_model, &ctx,
+        ESP_BLE_MESH_VND_MODEL_OP_SEND,
+        (uint16_t)len, (uint8_t*)data
+    );
+    if (err) ESP_LOGE(TAG, "server_model_send_msg failed (%d)", err);
+    else     ESP_LOGI(TAG, "TX (SERVER) → 0x%04x len=%u", ctx.addr, len);
+}
+
+
 
 static esp_ble_mesh_cfg_srv_t config_server = {
     .net_transmit = ESP_BLE_MESH_TRANSMIT(2, 30),
@@ -95,16 +130,22 @@ static esp_ble_mesh_client_t vnd_client = {
 // 4) Client publish context
 ESP_BLE_MESH_MODEL_PUB_DEFINE(vnd_cli_pub, 400, ROLE_NODE);
 
-// 5) Vendor models array (client + server)
 static esp_ble_mesh_model_t vnd_models[] = {
-    // Vendor CLIENT (receives STATUS)
-    ESP_BLE_MESH_VENDOR_MODEL(CID_ESP, ESP_BLE_MESH_VND_MODEL_ID_CLIENT,
-                              vnd_cli_op, &vnd_cli_pub, &vnd_client),
+    // Vendor CLIENT
+    ESP_BLE_MESH_VENDOR_MODEL(CID_ESP,
+                              ESP_BLE_MESH_VND_MODEL_ID_CLIENT,
+                              vnd_cli_op,
+                              &vnd_cli_pub,
+                              &vnd_client),
 
-    // Vendor SERVER (receives SEND)
-    ESP_BLE_MESH_VENDOR_MODEL(CID_ESP, ESP_BLE_MESH_VND_MODEL_ID_SERVER, vnd_op,
-                              NULL, NULL),
+    // Vendor SERVER
+    ESP_BLE_MESH_VENDOR_MODEL(CID_ESP,
+                              ESP_BLE_MESH_VND_MODEL_ID_SERVER,
+                              vnd_op,
+                              NULL,
+                              NULL),
 };
+
 
 // static esp_ble_mesh_model_t root_models[] = {
 //     ESP_BLE_MESH_MODEL_CFG_SRV(&config_server),
@@ -197,13 +238,16 @@ static void example_ble_mesh_config_server_cb(
         ESP_LOG_BUFFER_HEX("AppKey",
                            param->value.state_change.appkey_add.app_key, 16);
         break;
-      case ESP_BLE_MESH_MODEL_OP_MODEL_APP_BIND: {
+
+case ESP_BLE_MESH_MODEL_OP_MODEL_APP_BIND: {
+    if (param->value.state_change.mod_app_bind.company_id == CID_ESP) {
         uint16_t mid = param->value.state_change.mod_app_bind.model_id;
-        if (mid == ESP_BLE_MESH_VND_MODEL_ID_CLIENT ||
-            mid == ESP_BLE_MESH_VND_MODEL_ID_SERVER) {
-          g_app_idx = param->value.state_change.mod_app_bind.app_idx;
+        if (mid == ESP_BLE_MESH_VND_MODEL_ID_SERVER) {
+            g_app_idx = param->value.state_change.mod_app_bind.app_idx;
+            ESP_LOGI(TAG, "Vendor SERVER bound to AppIdx 0x%04x", g_app_idx);
         }
-      } break;
+    }
+} break;
       default:
         ESP_LOGW(TAG, "Config server unhandled state change op: 0x%06x",
                  param->ctx.recv_op);
@@ -222,7 +266,7 @@ static void example_ble_mesh_custom_model_cb(
       uint16_t len = param->model_operation.length;
       const uint8_t* p = param->model_operation.msg;
       const esp_ble_mesh_model_t* m = param->model_operation.model;
-      uint16_t src = param->model_operation.ctx->addr;
+      //uint16_t src = param->model_operation.ctx->addr;
 
       if (op == ESP_BLE_MESH_VND_MODEL_OP_SEND) {
         // Server side: got a SEND, reply with STATUS
@@ -233,6 +277,8 @@ static void example_ble_mesh_custom_model_cb(
           echo_tid = p[0];
 
         const esp_ble_mesh_msg_ctx_t* c = param->model_operation.ctx;
+        g_app_idx = c->app_idx;
+        //g_net_idx = c->recv_net_idx;
         ESP_LOGI(TAG, "[RX] SEND src=0x%04x dst=0x%04x ttl=%u rssi=%d len=%u",
                  c->addr, c->recv_dst, c->recv_ttl, c->recv_rssi, len);
 
@@ -299,6 +345,12 @@ static esp_err_t ble_mesh_init(void) {
     return err;
   }
 
+  g_vnd_srv_model = esp_ble_mesh_find_vendor_model(&elements[0], CID_ESP, ESP_BLE_MESH_VND_MODEL_ID_SERVER);
+if (!g_vnd_srv_model) {
+    ESP_LOGE(TAG, "Could not find vendor SERVER model");
+    return ESP_FAIL;
+}
+
   err = esp_ble_mesh_node_prov_enable(ESP_BLE_MESH_PROV_ADV |
                                       ESP_BLE_MESH_PROV_GATT);
   if (err != ESP_OK) {
@@ -332,7 +384,7 @@ void app_main(void) {
   }
 
   bridge_gatts_init();
-
+  bridge_set_rx_cb(bridge_rx_to_mesh);
   ble_mesh_get_dev_uuid(dev_uuid);
 
 lcd_i2c_init(I2C_NUM_0, (gpio_num_t)21, (gpio_num_t)22, 400000, 0x27);
@@ -345,3 +397,4 @@ lcd_printf("Mesh booting…");
     ESP_LOGE(TAG, "Bluetooth mesh init failed (err %d)", err);
   }
 }
+

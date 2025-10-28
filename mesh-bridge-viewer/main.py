@@ -10,6 +10,7 @@ from collections.abc import Callable
 
 BRIDGE_SERVICE = "0000fff0-0000-1000-8000-00805f9b34fb"
 BRIDGE_CHAR    = "0000fff1-0000-1000-8000-00805f9b34fb"
+BRIDGE_TX = "0000fff2-0000-1000-8000-00805f9b34fb"
 
 AUTO_RECONNECT_DELAY_S = 2.0
 SCAN_TIMEOUT_S = 6.0
@@ -110,7 +111,14 @@ class BLEChatApp:
         if not msg:
             return
         self.entry.delete(0, tk.END)
-        self.log_line("You (local only)", msg)  # viewer-only for the demo
+        self.log_line("You", msg)
+        # Write to ESP (best-effort)
+        if self.client:
+            try:
+                data = msg.encode("utf-8")[:90]  # keep under BRIDGE_VAL_MAX
+                asyncio.create_task(self.client.write_gatt_char(BRIDGE_TX, data, response=False))
+            except Exception as e:
+                self.log_line("Error", f"Send failed: {e}")
 
     def user_connect(self):
         # manual connect/reconnect on button
