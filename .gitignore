@@ -40,6 +40,7 @@ partition-table/
 venv/
 ENV/
 env/
+!pc-interface/
 
 # pip cache
 pip-wheel-metadata/
