@@ -276,7 +276,7 @@ static void example_ble_mesh_custom_model_cb(
 
         // Drop self-loopback so GUI doesn't see its own message twice
         if (c->addr != g_elem_addr) {
-          uint16_t mirror_len = (len > 20) ? 20 : len;
+          uint16_t mirror_len = (len > 90) ? 90 : len;
           bridge_notify(p, mirror_len);
         }
 
