@@ -260,57 +260,41 @@ case ESP_BLE_MESH_MODEL_OP_MODEL_APP_BIND: {
 
 static void example_ble_mesh_custom_model_cb(
     esp_ble_mesh_model_cb_event_t event, esp_ble_mesh_model_cb_param_t* param) {
+
   switch (event) {
+
     case ESP_BLE_MESH_MODEL_OPERATION_EVT: {
-      uint32_t op = param->model_operation.opcode;
+      uint32_t op  = param->model_operation.opcode;
       uint16_t len = param->model_operation.length;
-      const uint8_t* p = param->model_operation.msg;
-      const esp_ble_mesh_model_t* m = param->model_operation.model;
-      //uint16_t src = param->model_operation.ctx->addr;
+      const uint8_t *p = param->model_operation.msg;
+      const esp_ble_mesh_model_t *m = param->model_operation.model;
+      const esp_ble_mesh_msg_ctx_t *c = param->model_operation.ctx;
 
       if (op == ESP_BLE_MESH_VND_MODEL_OP_SEND) {
-        // Server side: got a SEND, reply with STATUS
-        uint16_t echo_tid = 0;
-        if (len >= 2)
-          echo_tid = (uint16_t)p[0] | ((uint16_t)p[1] << 8);
-        else if (len == 1)
-          echo_tid = p[0];
-
-        const esp_ble_mesh_msg_ctx_t* c = param->model_operation.ctx;
+        // Cache AppKey idx so GUI-initiated TX can use it later
         g_app_idx = c->app_idx;
-        //g_net_idx = c->recv_net_idx;
-        ESP_LOGI(TAG, "[RX] SEND src=0x%04x dst=0x%04x ttl=%u rssi=%d len=%u",
-                 c->addr, c->recv_dst, c->recv_ttl, c->recv_rssi, len);
+
+        // Drop self-loopback so GUI doesn't see its own message twice
+        if (c->addr != g_elem_addr) {
+          uint16_t mirror_len = (len > 20) ? 20 : len;
+          bridge_notify(p, mirror_len);
+        }
+
+        uint16_t echo_tid = 0;
+        if (len >= 2)      echo_tid = (uint16_t)p[0] | ((uint16_t)p[1] << 8);
+        else if (len == 1) echo_tid = p[0];
 
         esp_err_t err = esp_ble_mesh_server_model_send_msg(
-            (esp_ble_mesh_model_t*)m, param->model_operation.ctx,
+            (esp_ble_mesh_model_t *)m, c,
             ESP_BLE_MESH_VND_MODEL_OP_STATUS, sizeof(echo_tid),
-            (uint8_t*)&echo_tid);
-        if (err) ESP_LOGE(TAG, "STATUS send failed (%d)", err);
-        uint16_t mirror_len = len > 20 ? 20 : len;
-        bridge_notify(p, mirror_len);
+            (uint8_t *)&echo_tid);
+        if (err) {
+          ESP_LOGE(TAG, "STATUS send failed (%d)", err);
+        }
         return;
       }
 
       if (op == ESP_BLE_MESH_VND_MODEL_OP_STATUS) {
-        uint16_t val = 0;
-        if (len >= 2)
-          val = (uint16_t)p[0] | ((uint16_t)p[1] << 8);
-        else if (len == 1)
-          val = p[0];
-
-        const esp_ble_mesh_msg_ctx_t* c = param->model_operation.ctx;
-        ESP_LOGI(TAG,
-                 "[RX] STATUS message received:\n"
-                 " Source (src):      0x%04x\n"
-                 " Destination (dst): 0x%04x\n"
-                 " TTL:               %u\n"
-                 " RSSI:              %d dBm\n"
-                 " Length:            %u bytes\n"
-                 " Value:             0x%04x",
-                 c->addr, c->recv_dst, c->recv_ttl, c->recv_rssi, len, val);
-        uint16_t mirror_len = len > 20 ? 20 : len;
-        bridge_notify(p, mirror_len);
         return;
       }
 
@@ -330,6 +314,7 @@ static void example_ble_mesh_custom_model_cb(
       break;
   }
 }
+
 
 static esp_err_t ble_mesh_init(void) {
   esp_err_t err;
